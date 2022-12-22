@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>HDMI over IP</title>
+		<script src="/socket.io/socket.io.js"></script>
+		<script src="/libde265.min.js"></script>
+	</head>
+	<body>
+		<canvas id="video"></canvas>
+		<script>
+			let player = new RawLivePlayer(videoRef.current);
+			player.set_status_callback((status, fps) => {
+				if (status == 'playing') console.log('playback started');
+				//else if (status == 'fps') console.log(fps);
+			});
+			const socket = io();
+			socket.on('video', (data) => {
+				player.push_data(data);
+			});
+
+			var RawLivePlayer = function (canvas) {
+				this.canvas = canvas;
+				this.ctx = canvas.getContext('2d');
+				this.status_cb = null;
+				this.error_cb = null;
+				this.ratio = null;
+				this.filters = false;
+				this.buffer = new ArrayBuffer(0);
+				this._reset();
+			};
+
+			RawLivePlayer.prototype._reset = function () {
+				this.start = null;
+				this.frames = 0;
+				this.image_data = null;
+				this.running = false;
+				this.buffer = new ArrayBuffer(0);
+			};
+
+			RawLivePlayer.prototype.set_status_callback = function (callback) {
+				this.status_cb = callback;
+			};
+
+			RawLivePlayer.prototype._set_status = function () {
+				//console.log('status update', ...arguments);
+				if (this.status_cb) {
+					this.status_cb.apply(this.status_cb, arguments);
+				}
+			};
+
+			RawLivePlayer.prototype.set_error_callback = function (callback) {
+				this.error_cb = callback;
+			};
+
+			RawLivePlayer.prototype._set_error = function (error, message) {
+				if (this.error_cb) {
+					this.error_cb(error, message);
+				}
+			};
+
+			RawLivePlayer.prototype._display_image = function (image) {
+				if (!this.start) {
+					this.start = new Date();
+					this._set_status('playing');
+				} else {
+					this.frames += 1;
+					var duration = new Date() - this.start;
+					if (duration > 1000) {
+						this._set_status(
+							'fps',
+							this.frames / (duration * 0.001)
+						);
+					}
+				}
+
+				var w = image.get_width();
+				var h = image.get_height();
+				if (
+					w != this.canvas.width ||
+					h != this.canvas.height ||
+					!this.image_data
+				) {
+					this.canvas.width = w;
+					this.canvas.height = h;
+					this.image_data = this.ctx.createImageData(w, h);
+					var image_data = this.image_data.data;
+					for (var i = 0; i < w * h; i++) {
+						image_data[i * 4 + 3] = 255;
+					}
+				}
+
+				var that = this;
+				image.display(this.image_data, function (display_image_data) {
+					that.ctx.putImageData(display_image_data, 0, 0);
+				});
+			};
+
+			RawLivePlayer.prototype.push_data = function (data) {
+				let that = this;
+				if (this.running) {
+					this.decoder.push_data(new Uint8Array(data));
+					this.decoder.decode((err) => {
+						if (
+							err != 0 &&
+							err !=
+								window.libde265
+									.DE265_ERROR_WAITING_FOR_INPUT_DATA
+						) {
+							console.log('decode error', err);
+							that._set_error(err, 'decode error');
+						}
+					});
+				} else {
+					this.running = true;
+					this.decoder = new window.libde265.Decoder();
+					this.decoder.set_image_callback(function (image) {
+						that._display_image(image);
+						image.free();
+					});
+					this.decoder.push_data(new Uint8Array(data));
+				}
+			};
+
+			RawLivePlayer.prototype.playback = function (url) {
+				let that = this;
+				this._reset();
+
+				var ws = new WebSocket(url);
+				ws.binaryType = 'arraybuffer';
+				ws.addEventListener('message', function (event) {
+					that.push_data(event.data);
+				});
+
+				ws.addEventListener('error', function (e) {
+					console.log('Socket Error');
+				});
+
+				ws.addEventListener('close', function (e) {
+					console.log('Socket Closed');
+					that.stop();
+				});
+			};
+
+			RawLivePlayer.prototype.stop = function () {
+				this._set_status('stopped');
+				this._reset();
+			};
+		</script>
+	</body>
+</html>
