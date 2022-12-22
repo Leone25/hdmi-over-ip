@@ -5,23 +5,13 @@
 		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>HDMI over IP</title>
-		<script src="/socket.io/socket.io.js"></script>
+		<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 		<script src="/libde265.min.js"></script>
 	</head>
 	<body>
 		<canvas id="video"></canvas>
 		<script>
-			let player = new RawLivePlayer(videoRef.current);
-			player.set_status_callback((status, fps) => {
-				if (status == 'playing') console.log('playback started');
-				//else if (status == 'fps') console.log(fps);
-			});
-			const socket = io();
-			socket.on('video', (data) => {
-				player.push_data(data);
-			});
-
-			var RawLivePlayer = function (canvas) {
+			let RawLivePlayer = function (canvas) {
 				this.canvas = canvas;
 				this.ctx = canvas.getContext('2d');
 				this.status_cb = null;
@@ -148,6 +138,17 @@
 				this._set_status('stopped');
 				this._reset();
 			};
+
+			let player = new RawLivePlayer(document.getElementById('video'));
+			player.set_status_callback((status, fps) => {
+				if (status == 'playing') console.log('playback started');
+				//else if (status == 'fps') console.log(fps);
+			});
+			const socket = io();
+			socket.on('video', (data) => {
+				player.push_data(data);
+			});
+
 		</script>
 	</body>
 </html>
