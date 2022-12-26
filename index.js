@@ -33,7 +33,13 @@ client.on('message', function (message, remote) {
     io.to('video').emit('video', message);
 });
 
-client.bind(config.sourcePort, config.sourceHost);
+client.on('error', (err) => {
+    if (err.code == "EADDRINUSE") {
+        console.log("Port already binded");
+    } 
+})
+
+client.bind(config.sourcePort, config.localIp);
 
 
 
